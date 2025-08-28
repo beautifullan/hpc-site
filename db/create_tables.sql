@@ -1,0 +1,3 @@
+CREATE TABLE software (id SERIAL PRIMARY KEY,name VARCHAR(200) NOT NULL UNIQUE,abstract TEXT,homepage TEXT,github TEXT,categories TEXT[],tags TEXT[],created_at TIMESTAMP DEFAULT NOW());
+CREATE TABLE paper (id SERIAL PRIMARY KEY,title TEXT NOT NULL,authors TEXT[],abstract TEXT,url TEXT,software_names TEXT[],created_at TIMESTAMP DEFAULT NOW());
+CREATE TABLE paper (id SERIAL PRIMARY KEY,title TEXT NOT NULL,authors TEXT[],abstract TEXT,url TEXT,software_names TEXT[],created_at TIMESTAMP DEFAULT NOW());
