@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -12,7 +11,7 @@ import (
 var DB *pgxpool.Pool
 
 func InitDB() {
-	dsn := os.Getenv("DATABASE_URL") // 从环境变量读取
+	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("环境变量 DATABASE_URL 未设置")
 	}
@@ -22,12 +21,12 @@ func InitDB() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	// 测试一下连接
+	// 测试连接
 	err = pool.Ping(context.Background())
 	if err != nil {
 		log.Fatalf("数据库无法 Ping 通: %v", err)
 	}
 
 	DB = pool
-	fmt.Println("✅ 成功连接到数据库")
+	log.Println("✅ 成功连接到数据库")
 }
