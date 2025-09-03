@@ -22,6 +22,7 @@ func main() {
 	r := gin.Default()
 
 	r.GET("/software", handler.GetSoftware)
+	r.GET("/paper", handler.GetPapers)
 
 	r.Run(":8080")
 }
