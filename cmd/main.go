@@ -16,13 +16,16 @@ func main() {
 		log.Println("⚠️ .env 文件未找到，尝试使用系统环境变量")
 	}
 
-	// 初始化数据库
+	// 初始化数据库（现在是 database/sql）
 	pkg.InitDB()
 
 	r := gin.Default()
 
+	// 路由
 	r.GET("/software", handler.GetSoftware)
+	r.GET("/software/:id", handler.GetSoftwareDetail)
 	r.GET("/paper", handler.GetPapers)
 
+	log.Println("🚀 服务器启动: http://localhost:8080")
 	r.Run(":8080")
 }
