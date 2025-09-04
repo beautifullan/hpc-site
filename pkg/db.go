@@ -1,32 +1,32 @@
 package pkg
 
 import (
-	"context"
+	"database/sql"
 	"log"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/lib/pq" // Postgres driver
 )
 
-var DB *pgxpool.Pool
+var DB *sql.DB
 
 func InitDB() {
+	// 从环境变量读取 DATABASE_URL
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("环境变量 DATABASE_URL 未设置")
+		log.Fatal("❌ DATABASE_URL 未设置")
 	}
 
-	pool, err := pgxpool.New(context.Background(), dsn)
+	var err error
+	DB, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatalf("数据库连接失败: %v", err)
+		log.Fatalf("❌ 数据库连接失败: %v", err)
 	}
 
 	// 测试连接
-	err = pool.Ping(context.Background())
-	if err != nil {
-		log.Fatalf("数据库无法 Ping 通: %v", err)
+	if err := DB.Ping(); err != nil {
+		log.Fatalf("❌ 数据库不可用: %v", err)
 	}
 
-	DB = pool
-	log.Println("✅ 成功连接到数据库")
+	log.Println("✅ 数据库连接成功")
 }
