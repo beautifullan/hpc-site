@@ -49,9 +49,16 @@ func GetSoftwareDetail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	//查相关benchmark
+	benchmarks, err := repository.GetBenchmarksBySoftwareID(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"software": software,
-		"papers":   papers,
+		"software":   software,
+		"papers":     papers,
+		"benchmarks": benchmarks,
 	})
 }
