@@ -22,12 +22,12 @@ func main() {
 	r := gin.Default()
 
 	// 路由
-	r.GET("/software", handler.GetSoftware)
-	r.GET("/software/:id", handler.GetSoftwareDetail)
-	r.GET("/paper", handler.GetPapers)
+	r.GET("/softwares", handler.GetSoftware)
+	r.GET("/softwares/:id", handler.GetSoftwareDetail)
+	r.GET("/papers", handler.GetPapers)
 	// benchmark
-	r.GET("/benchmark", handler.GetBenchmarks)
-	r.GET("/software/:id/benchmark", handler.GetBenchmarksBySoftware)
+	r.GET("/benchmarks", handler.GetBenchmarks)
+	r.GET("/softwares/:id/benchmark", handler.GetBenchmarksBySoftware)
 	log.Println("🚀 服务器启动: http://localhost:8080")
 	r.Run(":8080")
 }
