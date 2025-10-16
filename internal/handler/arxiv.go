@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/xml"
 	"fmt"
@@ -16,9 +15,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-
-	"github.com/ledongthuc/pdf"
-
 )
 
 type PaperResponse struct {
@@ -27,13 +23,14 @@ type PaperResponse struct {
 }
 
 type Paper struct {
-	ID           string `json:"ID"`
-	Title        string `json:"Title"`
-	Authors      string `json:"Authors"`
-	Abstract     string `json:"Abstract"`
-	URL          string `json:"URL"`
-	PDF          string `json:"Pdf"`
-	SoftwareName string `json:"SoftwareName"`
+	ID            string `json:"ID"`
+	Title         string `json:"Title"`
+	Authors       string `json:"Authors"`
+	Abstract      string `json:"Abstract"`
+	URL           string `json:"URL"`
+	PDF           string `json:"Pdf"`
+	SoftwareName  string `json:"SoftwareName"`
+	PublishedTime string `json:"PublishTime"`
 }
 
 // RSS represents the root of the RSS feed
@@ -82,67 +79,6 @@ type Item struct {
 	Creator      string `xml:"dc:creator"`
 }
 
-func readPdf(path string) (string, error) {
-	f, r, err := pdf.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("error opening PDF: %w", err)
-	}
-	defer f.Close()
-
-	var buf bytes.Buffer
-	b, err := r.GetPlainText()
-	if err != nil {
-		return "", fmt.Errorf("error getting plain text from PDF: %w", err)
-	}
-	buf.ReadFrom(b)
-	content := buf.String()
-	return content, nil
-}
-
-func searchPDFMultipleText(filePath string, search ...string) []string {
-	result := make([]string, 0)
-	fullContext, err := readPdf(filePath)
-
-	if err != nil {
-		log.Printf("Failed to read PDF file %s: %v", filePath, err)
-		return result
-	}
-
-	lowerText := strings.ToLower(fullContext)
-	for _, text := range search {
-		lowerSearchText := strings.ToLower(text)
-		if strings.Contains(lowerText, lowerSearchText) {
-			result = append(result, text)
-		}
-	}
-	return result
-}
-func downloadPDFToTemp(pdfURL, paperID string) (string, error) {
-	resp, err := http.Get(pdfURL)
-	if err != nil {
-		return "", fmt.Errorf("error downloading PDF: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("error: received non-200 status code %d", resp.StatusCode)
-	}
-
-	// 使用 os.CreateTemp 创建一个临时文件
-	tempFile, err := os.CreateTemp("", fmt.Sprintf("arxiv-%s-*.pdf", paperID))
-	if err != nil {
-		return "", fmt.Errorf("error creating temporary file: %w", err)
-	}
-	defer tempFile.Close() // 确保在函数退出时关闭文件句柄
-
-	_, err = io.Copy(tempFile, resp.Body)
-	if err != nil {
-		os.Remove(tempFile.Name()) // 如果写入失败，删除文件
-		return "", fmt.Errorf("error saving PDF: %w", err)
-	}
-	log.Printf("Successfully downloaded PDF to temporary file %s", tempFile.Name())
-	return tempFile.Name(), nil
-}
 func encodeParams(params map[string]string) string {
 	values := make(url.Values)
 	for key, value := range params {
@@ -152,7 +88,8 @@ func encodeParams(params map[string]string) string {
 }
 
 const CrawlPattern = "https://arxiv.org/list/%s/%s"
-
+const SearchPattern = "https://arxiv.org/search/?query=%s&searchtype=all&abstracts=hide&order=-announced_date_first&size=50&start=%d"
+const SearchPageSize = 50 // arXiv 搜索页面默认每页显示 50 条
 const linkReg = `<dt>(.|\s)*?<\/dt>`
 const pageReg = `<div\s*class='paging'>(.|\s)*?<\/div>`
 
@@ -236,6 +173,7 @@ func MatchSubmissionDate(source string, isWithDrawn bool, version int) string {
 	}
 }
 
+// 详情页的
 func FormatPageUrl(id string, isWithDrawn bool, version int) string {
 	if isWithDrawn {
 		return fmt.Sprintf("https://arxiv.org/abs/%sv%d", id, version)
@@ -244,6 +182,169 @@ func FormatPageUrl(id string, isWithDrawn bool, version int) string {
 	}
 }
 
+func FetchArxivSearchHtml(softwareName string, start int) (string, error) {
+	url := fmt.Sprintf(SearchPattern, softwareName, start)
+	for i := 0; i < 3; i++ { // 最多重试三次
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("⚠️ 第 %d 次请求失败: %v", i+1, err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return string(body), nil
+		}
+		log.Printf("⚠️ 返回状态码 %d，重试中...", resp.StatusCode)
+		time.Sleep(2 * time.Second)
+	}
+	return "", fmt.Errorf("连续请求失败: %s", url)
+}
+
+func GetArxivIDsFromSearchHtml(html string) []string {
+	// 更宽松的匹配
+	liRe := regexp.MustCompile(`(?s)<li[^>]*class="[^"]*arxiv-result[^"]*"[^>]*>(.*?)</li>`)
+	blocks := liRe.FindAllStringSubmatch(html, -1)
+
+	idRe := regexp.MustCompile(`https://arxiv\.org/abs/(\d{4}\.\d{4,5})`)
+	seen := make(map[string]bool)
+	ids := make([]string, 0)
+
+	for _, block := range blocks {
+		section := block[1]
+		m := idRe.FindStringSubmatch(section)
+		if len(m) > 1 {
+			id := m[1]
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// 提取总的结果数量，用于分页终止处理
+func MatchTotalResults(html string) int {
+	re := regexp.MustCompile(`of\s+([0-9,]+)\s+results`)
+	match := re.FindStringSubmatch(html) //html中第一个符合正则的部分
+	if len(match) > 1 {
+		// 移除逗号，并尝试转换成整数
+		totalStr := strings.ReplaceAll(match[1], ",", "")
+		total, err := strconv.Atoi(totalStr)
+		if err != nil {
+			log.Printf("Error converting total results string '%s' to int: %v", totalStr, err)
+			return 0
+		}
+		return total
+	}
+	return 0
+}
+func CrawlArxivAll(softwareName string) []string {
+	start := 0
+	page := 1
+	allIDs := make(map[string]bool)
+	total := 0
+
+	for {
+		log.Printf("第 %d 页 start=%d", page, start)
+		html, err := FetchArxivSearchHtml(softwareName, start)
+		if err != nil {
+			log.Printf("获取失败: %v", err)
+			break
+		}
+
+		if total == 0 {
+			total = MatchTotalResults(html)
+			log.Printf("📦 总共 %d 条结果", total)
+			if total == 0 {
+				break
+			}
+		}
+
+		ids := GetArxivIDsFromSearchHtml(html)
+		log.Printf("第 %d 页解析出 %d 条", page, len(ids))
+		for _, id := range ids {
+			allIDs[id] = true
+		}
+
+		// 检查是否已到末页
+		if len(ids) == 0 || start+SearchPageSize >= total {
+			log.Printf("抓取结束: 共 %d 唯一论文", len(allIDs))
+			break
+		}
+
+		start += SearchPageSize
+		page++
+		time.Sleep(2 * time.Second)
+	}
+
+	// 转成 slice
+	result := make([]string, 0, len(allIDs))
+	for id := range allIDs {
+		result = append(result, id)
+	}
+	return result
+}
+
+// 分页
+//func GetArxivBySoftware(softwareName string) {
+//	for {
+//		log.Printf("开始抓取 arXiv 论文：%s", softwareName)
+//		start := 0
+//		total := 0
+//		page := 1
+//		html, err := FetchArxivSearchHtml(softwareName, start)
+//		if err != nil {
+//			log.Printf("抓取失败：")
+//			break
+//		}
+//		//第一次解析总结果数
+//		if total == 0 {
+//			total = MatchTotalResults(html)
+//			log.Printf("检索结果共 %d 篇论文", total)
+//			if total == 0 {
+//				log.Println("没有找到任何论文，结束。")
+//				break
+//			}
+//		}
+//		//提取arxiv——id
+//		ids := GetArxivIDsFromSearchHtml(html)
+//		if len(ids) == 0 {
+//			log.Println("本页未找到论文，结束。")
+//			break
+//		}
+//		//逐篇处理
+//		for _, id := range ids {
+//			if CheckPaperExist(id) {
+//				log.Printf("论文 %s 已存在，跳过。", id)
+//				continue
+//			}
+//			paper := getPaperFromMetaData(id)
+//			paper.SoftwareName = softwareName
+//			if paper.ID != "" {
+//				InsertPaper(paper)
+//			}
+//		}
+//		// ⑤ 分页逻辑
+//		start += SearchPageSize
+//		if start >= total {
+//			log.Printf("抓取完毕，总共 %d 篇论文。", total)
+//			break
+//		}
+//
+//		log.Printf("完成第 %d 页，准备下一页...", page)
+//		page++
+//
+//		// 防止被封
+//		time.Sleep(3 * time.Second)
+//	}
+//
+//}
+
+// 这是论文详情页的source代码
 func GetArxivPageSource(id string, isWithDrawn bool, version int) string {
 	url := FormatPageUrl(id, isWithDrawn, version)
 	fmt.Println(url)
@@ -283,12 +384,13 @@ func getPaperFromMetaData(extractedId string) Paper {
 		pdf := MatchPdf(code)
 		publishedTime := MatchSubmissionDate(code, isLatestVersionWithDrawn, version)
 		return Paper{
-			ID:          extractedId,
-			Title:       title,
-			Authors:     authors,
-			Abstract:    abstract,
-			URL:         url,
-			SoftwareName : ,
+			ID:            extractedId,
+			Title:         title,
+			Authors:       authors,
+			Abstract:      abstract,
+			URL:           url,
+			PDF:           pdf,
+			PublishedTime: publishedTime,
 		}
 	} else {
 		url := fmt.Sprintf("https://arxiv.org/abs/%s", extractedId)
@@ -296,15 +398,16 @@ func getPaperFromMetaData(extractedId string) Paper {
 		pdf := MatchPdf(sourceCode)
 		publishedTime := MatchSubmissionDate(sourceCode, false, 0)
 		return Paper{
-			ID:          extractedId,
-			Title:       title,
-			Authors:     authors,
-			Abstract:    abstract,
-			AbstractURL: url,
-			PDF:         pdf,
-			Published:   publishedTime,
+			ID:            extractedId,
+			Title:         title,
+			Authors:       authors,
+			Abstract:      abstract,
+			URL:           url,
+			PDF:           pdf,
+			PublishedTime: publishedTime,
 		}
 	}
+
 }
 
 func parseGuid(seg string) string {
