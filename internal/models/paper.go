@@ -10,4 +10,6 @@ type Paper struct {
 	URL           string    `db:"url" json:"url"`
 	SoftwareNames []string  `db:"software_names" json:"software_names"`
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	Pdf           string    `db:"pdf" json:"pdf"`
+	PublishedTime time.Time `db:"published_time" json:"published_time"`
 }

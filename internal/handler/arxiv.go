@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/xml"
 	"fmt"
+	"github.com/lib/pq"
 	"io"
 	"log"
 	"net/http"
@@ -289,60 +290,70 @@ func CrawlArxivAll(softwareName string) []string {
 	return result
 }
 
-// 分页
-//func GetArxivBySoftware(softwareName string) {
-//	for {
-//		log.Printf("开始抓取 arXiv 论文：%s", softwareName)
-//		start := 0
-//		total := 0
-//		page := 1
-//		html, err := FetchArxivSearchHtml(softwareName, start)
-//		if err != nil {
-//			log.Printf("抓取失败：")
-//			break
-//		}
-//		//第一次解析总结果数
-//		if total == 0 {
-//			total = MatchTotalResults(html)
-//			log.Printf("检索结果共 %d 篇论文", total)
-//			if total == 0 {
-//				log.Println("没有找到任何论文，结束。")
-//				break
-//			}
-//		}
-//		//提取arxiv——id
-//		ids := GetArxivIDsFromSearchHtml(html)
-//		if len(ids) == 0 {
-//			log.Println("本页未找到论文，结束。")
-//			break
-//		}
-//		//逐篇处理
-//		for _, id := range ids {
-//			if CheckPaperExist(id) {
-//				log.Printf("论文 %s 已存在，跳过。", id)
-//				continue
-//			}
-//			paper := getPaperFromMetaData(id)
-//			paper.SoftwareName = softwareName
-//			if paper.ID != "" {
-//				InsertPaper(paper)
-//			}
-//		}
-//		// ⑤ 分页逻辑
-//		start += SearchPageSize
-//		if start >= total {
-//			log.Printf("抓取完毕，总共 %d 篇论文。", total)
-//			break
-//		}
-//
-//		log.Printf("完成第 %d 页，准备下一页...", page)
-//		page++
-//
-//		// 防止被封
-//		time.Sleep(3 * time.Second)
-//	}
-//
-//}
+// 数据写入
+
+// EnsureSoftwareExists 确保软件名称存在于 software 表中。
+func EnsureSoftwareExists(db *sql.DB, name string) {
+	// 使用 PostgreSQL 的 UPSERT 避免重复插入
+	sql := `INSERT INTO software (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`
+	_, err := db.Exec(sql, name)
+	if err != nil {
+		log.Printf("Error ensuring software '%s' exists: %v", name, err)
+	}
+}
+
+// 检索现有论文的软件列表
+func GetPaperSoftwareNames(db *sql.DB, paperID string) ([]string, error) {
+	var softwareNames []string // 使用 lib/pq 的类型处理 PostgreSQL 数组
+	// 确保查询的是 paper 表中 id 对应的 software_names 字段
+	sql := `SELECT software_names FROM paper WHERE id = $1`
+
+	row := db.QueryRow(sql, paperID)
+	err := row.Scan(&softwareNames)
+
+	if err != nil {
+		return nil, err // 如果未找到，返回 sql.ErrNoRows
+	}
+	return softwareNames, nil
+}
+
+// 第一种情况paper不存在 insert
+func InsertNewPaper(db *sql.DB, paper Paper) {
+	log.Printf("Inserting new paper %s with software", paper.ID)
+	sql := `INSERT INTO paper(id, title, authors, abstract, url, pdf, software_names, published_time)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8)`
+	_, err := db.Exec(
+		sql,
+		paper.ID,
+		paper.Title,
+		pq.Array(paper.Authors),
+		paper.Abstract,
+		paper.URL,
+		paper.PDF,
+		pq.Array(paper.SoftwareName), // 插入软件名数组
+		paper.PublishedTime,
+	)
+	if err != nil {
+		log.Fatalf("Error inserting paper %s: %v", paper.ID, err)
+	} else {
+		log.Printf("Successfully inserted new paper: %s", paper.ID)
+	}
+}
+
+// paper存在但是software不存在
+func UpdatePaperSoftware(db *sql.DB, paperID string, updatedSoftwareNames []string) {
+	log.Printf("Updating software names for existing paper %s. New list: %v", paperID, updatedSoftwareNames)
+	//Update software names need to merge existing software names and new software
+	//Or we can append the new software in sql
+	sql := `UPDATE paper SET software_names = $1 WHERE id = $2`
+
+	_, err := db.Exec(sql, pq.Array(updatedSoftwareNames), paperID)
+	if err != nil {
+		log.Fatalf("Error updating paper %s: %v", paperID, err)
+	} else {
+		log.Printf("Successfully updated software names for paper: %s", paperID)
+	}
+}
 
 // 这是论文详情页的source代码
 func GetArxivPageSource(id string, isWithDrawn bool, version int) string {
