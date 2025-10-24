@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"hpc-site/internal/models"
@@ -353,9 +354,31 @@ func ProcessSoftwarePapers(softwareName string) {
 
 }
 
-func TestLammps(c *gin.Context) {
-	ProcessSoftwarePapers("Lammps")
+//	func TestLammps(c *gin.Context) {
+//		ProcessSoftwarePapers("Lammps")
+//		c.JSON(http.StatusOK, gin.H{
+//			"message": "test",
+//		})
+//	}
+func GetAllSoftwarePaper(c *gin.Context) {
+	ctx := context.Background()
+	//先从数据库获取所有的software
+	softwares, err := repository.QuerySoftware(ctx, "", "", "", "")
+	if err != nil {
+		log.Fatalf("查询软件失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询软件失败"})
+		return
+	}
+	for _, s := range softwares {
+		log.Printf("开始抓取 %s 相关的论文", s.Name)
+		ProcessSoftwarePapers(s.Name)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"message": "test",
+		"message": "所有软件论文抓取任务已完成",
 	})
+}
+
+func TestSinglePaper(c *gin.Context) {
+	//"https://arxiv.org/abs/2405.20629" got some error
+
 }
