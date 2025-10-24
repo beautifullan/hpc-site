@@ -28,7 +28,9 @@ func main() {
 	// benchmark
 	r.GET("/benchmarks", handler.GetBenchmarks)
 	r.GET("/softwares/:id/benchmark", handler.GetBenchmarksBySoftware)
-	r.POST("/test/paper-search", handler.TestLammps)
+	r.POST("/crawl/all", handler.GetAllSoftwarePaper)
+	r.POST("/test/single", handler.TestSinglePaper)
+
 	log.Println("🚀 服务器启动: http://localhost:8080")
 	r.Run(":8080")
 }
