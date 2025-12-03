@@ -2,8 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
-
 	"hpc-site/internal/models"
 	"hpc-site/pkg"
 )
@@ -33,23 +31,17 @@ func GetAllBenchmarks(ctx context.Context) ([]models.Benchmark, error) {
 	var benchmarks []models.Benchmark
 	for rows.Next() {
 		var b models.Benchmark
-		var hw, mt []byte
-
 		if err := rows.Scan(
 			&b.ID,
 			&b.SoftwareID,
 			&b.Name,
-			&b.Dataset,
-			&hw,
-			&mt,
+			&b.DatasetName,
+			&b.DatasetUrl,
 			&b.Version,
 			&b.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
-
-		json.Unmarshal(hw, &b.Hardware)
-		json.Unmarshal(mt, &b.Metrics)
 
 		benchmarks = append(benchmarks, b)
 	}
@@ -83,23 +75,17 @@ func GetBenchmarksBySoftwareID(ctx context.Context, softwareID int) ([]models.Be
 	var benchmarks []models.Benchmark
 	for rows.Next() {
 		var b models.Benchmark
-		var hw, mt []byte
-
 		if err := rows.Scan(
 			&b.ID,
 			&b.SoftwareID,
 			&b.Name,
-			&b.Dataset,
-			&hw,
-			&mt,
+			&b.DatasetName,
+			&b.DatasetUrl,
 			&b.Version,
 			&b.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
-
-		json.Unmarshal(hw, &b.Hardware)
-		json.Unmarshal(mt, &b.Metrics)
 
 		benchmarks = append(benchmarks, b)
 	}
