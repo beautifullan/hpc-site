@@ -26,6 +26,7 @@ func main() {
 	r.GET("/softwares/:id", handler.GetSoftwareDetail)
 	r.GET("/papers", handler.GetPapers)
 	// benchmark
+	r.GET("/benchmarks/:benchmarkID/results", handler.GetBenchmarkResults)
 	r.GET("/benchmarks", handler.GetBenchmarks)
 	r.GET("/softwares/:id/benchmark", handler.GetBenchmarksBySoftware)
 	r.POST("/crawl/all", handler.GetAllSoftwarePaper)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"hpc-site/internal/repository"
+	"log"
 )
 
 // GET /benchmark
@@ -37,4 +38,25 @@ func GetBenchmarksBySoftware(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, benchmarks)
+}
+
+func GetBenchmarkResults(c *gin.Context) {
+	benchmarkIDStr := c.Param("benchmarkID")
+	benchmarkID, err := strconv.Atoi(benchmarkIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Benchmark ID"})
+		return
+	}
+	ctx := c.Request.Context()
+	rawResults, err := repository.GetAllBechmarkResults(ctx, benchmarkID)
+
+	// 注意：仓库方法名称应为 GetBenchmarkResultsByBenchmarkID，这里使用你的 GetAllBechmarkResults
+	results, err := repository.GetAllBechmarkResults(c.Request.Context(), benchmarkID)
+	if err != nil {
+		log.Print(c.Request.Context(), "获取 Benchmark 运行结果失败", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取 Benchmark 运行结果失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
 }
